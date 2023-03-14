@@ -72,7 +72,7 @@ def evaluate(args, model, tokenizer, prefix=""):
     #    model = torch.nn.DataParallel(model)
 
     # Eval!
-    logger.info("***** Running evaluation {} *****".format(prefix))
+    logger.info(f"***** Running evaluation {prefix} *****")
     logger.info("  Num examples = %d", len(dataset))
     logger.info("  Batch size = %d", args.eval_batch_size)
 
@@ -131,11 +131,17 @@ def evaluate(args, model, tokenizer, prefix=""):
     logger.info("  Evaluation done in total %f secs (%f sec per example)", evalTime, evalTime / len(dataset))
 
     # Compute predictions
-    output_prediction_file = os.path.join(args.output_dir, "predictions_{}.json".format(prefix))
-    output_nbest_file = os.path.join(args.output_dir, "nbest_predictions_{}.json".format(prefix))
+    output_prediction_file = os.path.join(
+        args.output_dir, f"predictions_{prefix}.json"
+    )
+    output_nbest_file = os.path.join(
+        args.output_dir, f"nbest_predictions_{prefix}.json"
+    )
 
     if args.version_2_with_negative:
-        output_null_log_odds_file = os.path.join(args.output_dir, "null_odds_{}.json".format(prefix))
+        output_null_log_odds_file = os.path.join(
+            args.output_dir, f"null_odds_{prefix}.json"
+        )
     else:
         output_null_log_odds_file = None
 
@@ -155,9 +161,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         tokenizer,
     )
 
-    # Compute the F1 and exact scores.
-    results = squad_evaluate(examples, predictions)
-    return results
+    return squad_evaluate(examples, predictions)
 
 
 def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False):
@@ -166,14 +170,10 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         torch.distributed.barrier()
 
     # Load data features from cache or dataset file
-    input_dir = args.data_dir if args.data_dir else "."
+    input_dir = args.data_dir or "."
     cached_features_file = os.path.join(
         input_dir,
-        "cached_{}_{}_{}".format(
-            "dev" if evaluate else "train",
-            list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            str(args.max_seq_length),
-        ),
+        f'cached_{"dev" if evaluate else "train"}_{list(filter(None, args.model_name_or_path.split("/"))).pop()}_{str(args.max_seq_length)}',
     )
 
     # Init features and dataset from cache if it exists
@@ -225,9 +225,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         # Make sure only the first process in distributed training process the dataset, and the others will use the cache
         torch.distributed.barrier()
 
-    if output_examples:
-        return dataset, examples, features
-    return dataset
+    return (dataset, examples, features) if output_examples else dataset
 
 
 def main():
@@ -406,13 +404,13 @@ def main():
         torch.distributed.barrier()
 
     config = BertConfig.from_pretrained(
-        args.config_name if args.config_name else args.model_name_or_path,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        args.config_name or args.model_name_or_path,
+        cache_dir=args.cache_dir or None,
     )
     tokenizer = BertTokenizer.from_pretrained(
-        args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
+        args.tokenizer_name or args.model_name_or_path,
         do_lower_case=args.do_lower_case,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        cache_dir=args.cache_dir or None,
     )
 
     if args.local_rank == 0:
@@ -437,7 +435,7 @@ def main():
             model.to(args.device)
 
             if args.int8_mode != 0:
-                logger.info("int8_mode: " + str(args.int8_mode))
+                logger.info(f"int8_mode: {str(args.int8_mode)}")
                 model.half()
             elif args.data_type == 'fp16':
                 logger.info("Use fp16")
@@ -488,10 +486,13 @@ def main():
             # Evaluate
             result = evaluate(args, model, tokenizer, prefix=global_step)
 
-            result = dict((k + ("_{}".format(global_step) if global_step else ""), v) for k, v in result.items())
-            results.update(result)
+            result = {
+                k + (f"_{global_step}" if global_step else ""): v
+                for k, v in result.items()
+            }
+            results |= result
 
-    logger.info("Results: {}".format(results))
+    logger.info(f"Results: {results}")
 
     return results
 
